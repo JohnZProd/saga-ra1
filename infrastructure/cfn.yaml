@@ -1,0 +1,80 @@
+Parameters:
+  DBUser:
+    Type: String
+    Default: saga-dev
+  DBAdmin:
+    Type: String
+    Default: admin
+  DBUserPass:
+    Type: String
+  DBAdminPass:
+    Type: String
+  DBName:
+    Type: String
+    Default: saga
+  DBEndpoint:
+    Type: String
+    Default: localhost
+
+Resources:
+  VPC:
+    Type: "AWS::EC2::VPC"
+    Properties:
+      CidrBlock: 10.0.0.0/16 
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+
+  Subnet:
+    Type: "AWS::EC2::Subnet"
+    Properties:
+      AvailabilityZone: "ap-southeast-2a"
+      CidrBlock: 10.0.0.0/24
+      MapPublicIpOnLaunch: true
+      VpcId: !Ref VPC
+
+  Instance:
+    Type: "AWS::EC2::Instance"
+    Properties:
+      ImageId: String
+      InstanceType: t3.medium
+      KeyName: sydney
+      SecurityGroupIds:
+        - String
+      SubnetId: !Ref Subnet
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          export DB_USER=${DBUser}
+          export DB_ADMIN=${DBAdmin}
+          export DB_USER_PASS=${DBUserPass}
+          export DB_ADMIN_PASS=${DBAdminPass}
+          export DB_NAME=${DBName}
+          export DB_ENDPOINT=${DBEndpoint}
+
+          cat <<'EOF' >> /etc/yum.repos.d/mongodb-org-4.4.repo
+          [mongodb-org-4.4]
+          name=MongoDB Repository
+          baseurl=https://repo.mongodb.org/yum/amazon/2/mongodb-org/4.4/x86_64/
+          gpgcheck=1
+          enabled=1
+          gpgkey=https://www.mongodb.org/static/pgp/server-4.4.asc
+          EOF
+          
+          yum install -y mongodb-org
+          
+          systemctl start mongod
+          systemctl enable mongod
+          
+          # Insert the mongo.conf file to /etc/
+          
+          mongo --eval "db.createUser({user: '$DB_ADMIN',pwd: '$DB_ADMIN_PASS',roles: ['root']})" admin
+          mongo --eval "db.createUser({user: '$DB_USER',pwd: '$DB_USER_PASS',roles: [{ role: 'readWrite', db:'$DB_NAME'}]})" $DB_NAME
+          
+          systemctl restart mongod
+
+          # Install and config nginx
+          yum install -y nginx
+          systemctl start nginx
+          systemctl enable nginx
+
+          # Add git stuff
