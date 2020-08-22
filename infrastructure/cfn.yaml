@@ -35,21 +35,31 @@ Resources:
   Instance:
     Type: "AWS::EC2::Instance"
     Properties:
-      ImageId: String
+      ImageId: ami-0ded330691a314693
       InstanceType: t3.medium
       KeyName: sydney
       SecurityGroupIds:
-        - String
+        - !Ref SecurityGroup
       SubnetId: !Ref Subnet
       UserData:
         Fn::Base64: !Sub |
           #!/bin/bash
+
           export DB_USER=${DBUser}
           export DB_ADMIN=${DBAdmin}
           export DB_USER_PASS=${DBUserPass}
           export DB_ADMIN_PASS=${DBAdminPass}
           export DB_NAME=${DBName}
           export DB_ENDPOINT=${DBEndpoint}
+
+          cat > /etc/profile.d/load_env.sh << 'EOF'
+          export DB_USER=${DBUser}
+          export DB_ADMIN=${DBAdmin}
+          export DB_USER_PASS=${DBUserPass}
+          export DB_ADMIN_PASS=${DBAdminPass}
+          export DB_NAME=${DBName}
+          export DB_ENDPOINT=${DBEndpoint}
+          EOF
 
           cat <<'EOF' >> /etc/yum.repos.d/mongodb-org-4.4.repo
           [mongodb-org-4.4]
@@ -60,6 +70,7 @@ Resources:
           gpgkey=https://www.mongodb.org/static/pgp/server-4.4.asc
           EOF
           
+          yum install -y git
           yum install -y mongodb-org
           
           systemctl start mongod
@@ -73,8 +84,68 @@ Resources:
           systemctl restart mongod
 
           # Install and config nginx
-          yum install -y nginx
+          amazon-linux-extras install nginx1 -y
           systemctl start nginx
           systemctl enable nginx
 
           # Add git stuff
+
+          # Install go
+          yum install -y go
+          go get go.mongodb.org/mongo-driver/mongo
+
+          # Install python
+          yum install -y python3
+          pip3 install ultimate-sitemap-parser
+
+          mkdir -p /var/app
+          # Install code here and build
+
+  SecurityGroup:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      GroupDescription: Instance security group
+      GroupName: InstanceSecurityGroup
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 0
+          ToPort: 65535
+          CidrIp: 0.0.0.0/0
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+      VpcId: !Ref VPC
+
+  InternetGateway:
+    Type: "AWS::EC2::InternetGateway"
+  
+  VPCIGWAttachment:
+    Type: "AWS::EC2::VPCGatewayAttachment"
+    Properties:
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref VPC
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+
+  DefaultPublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: VPCIGWAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref Subnet
