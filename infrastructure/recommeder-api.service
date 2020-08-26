@@ -1,0 +1,16 @@
+[Unit]
+Description=Go Application as a Service
+
+[Service]
+User=root
+
+WorkingDirectory=/var/app/saga-recommender-api
+
+ExecStart=/bin/bash /var/app/saga-recommender-api/start.sh
+SuccessExitStatus=143
+TimeoutStopSec=10
+Restart=on-failure
+RestartSec=5
+         
+[Install] 
+WantedBy=multi-user.target 
