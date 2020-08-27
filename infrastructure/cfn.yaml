@@ -52,14 +52,16 @@ Resources:
           export DB_NAME=${DBName}
           export DB_ENDPOINT=${DBEndpoint}
 
-          cat > /etc/profile.d/load_env.sh << 'EOF'
-          export DB_USER=${DBUser}
-          export DB_ADMIN=${DBAdmin}
-          export DB_USER_PASS=${DBUserPass}
-          export DB_ADMIN_PASS=${DBAdminPass}
-          export DB_NAME=${DBName}
-          export DB_ENDPOINT=${DBEndpoint}
+          cat > /etc/environment << 'EOF'
+          DB_USER=${DBUser}
+          DB_ADMIN=${DBAdmin}
+          DB_USER_PASS=${DBUserPass}
+          DB_ADMIN_PASS=${DBAdminPass}
+          DB_NAME=${DBName}
+          DB_ENDPOINT=${DBEndpoint}
           EOF
+
+          yum install -y git
 
           cat <<'EOF' >> /etc/yum.repos.d/mongodb-org-4.4.repo
           [mongodb-org-4.4]
@@ -70,13 +72,17 @@ Resources:
           gpgkey=https://www.mongodb.org/static/pgp/server-4.4.asc
           EOF
           
-          yum install -y git
           yum install -y mongodb-org
+
+          # Add git stuff
+          git clone https://github.com/JohnZProd/saga-ra1.git
           
           systemctl start mongod
           systemctl enable mongod
           
           # Insert the mongo.conf file to /etc/
+          rm -f /etc/mongod.conf
+          cp -f saga-ra1/infrastructure/mongod.conf /etc/
           
           mongo --eval "db.createUser({user: '$DB_ADMIN',pwd: '$DB_ADMIN_PASS',roles: ['root']})" admin
           mongo --eval "db.createUser({user: '$DB_USER',pwd: '$DB_USER_PASS',roles: [{ role: 'readWrite', db:'$DB_NAME'}]})" $DB_NAME
@@ -88,11 +94,13 @@ Resources:
           systemctl start nginx
           systemctl enable nginx
 
-          # Add git stuff
+          cp saga-ra1/infrastructure/go-proxy.conf /etc/nginx/default.d/
+          systemctl restart nginx
 
           # Install go
           yum install -y go
-          go get go.mongodb.org/mongo-driver/mongo
+          # This command needs to be run as the app user
+          sudo -u ec2-user go get go.mongodb.org/mongo-driver/mongo
 
           # Install python
           yum install -y python3
@@ -100,6 +108,23 @@ Resources:
 
           mkdir -p /var/app
           # Install code here and build
+          # Ensure that it is chowned to execute the start script
+          git clone https://github.com/JohnZProd/saga-recommender-api.git
+
+          chown ec2-user saga-recommender-api/start.sh
+          chmod +x saga-recommender-api/start.sh
+
+          cp -R saga-recommender-api/ /var/app
+
+          # Install the service
+          cp saga-ra1/infrastructure/saga-recommender-api.service /etc/systemd/system/
+          systemctl daemon-reload
+
+          systemctl enable saga-recommender-api.service
+          systemctl start saga-recommender-api
+
+          # Migrate the db
+          # From local (manually)
 
   SecurityGroup:
     Type: "AWS::EC2::SecurityGroup"
